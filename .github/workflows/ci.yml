@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./... -count=1
+      # Determinism must hold regardless of how many OS threads Go uses. A
+      # simulator that reproduces on one core and diverges on eight is worse
+      # than useless, so this is a separate, explicit job step rather than a
+      # property we assume.
+      - name: test -race
+        run: go test ./... -race -count=1
+      - name: determinism across GOMAXPROCS
+        run: |
+          for p in 1 2 4 8; do
+            echo "GOMAXPROCS=$p"
+            GOMAXPROCS=$p go test ./sim/ ./netsim/ -run 'Determinism|IdenticalTrace' -count=1
+          done
+      - name: demo finds the planted bug
+        run: |
+          # The demo must FAIL — it exists to prove the checker catches a real
+          # violation. A zero exit here means the harness stopped working.
+          if go run ./examples/kvstore/cmd; then
+            echo "demo exited 0; it is supposed to find a linearizability violation"
+            exit 1
+          fi

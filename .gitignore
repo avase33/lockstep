@@ -1,0 +1,13 @@
+# Build output
+/lockstep
+/bin/
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Editors
+.idea/
+.vscode/
+*.swp
